@@ -14,6 +14,13 @@ client_secret = os.getenv("CLIENT_SECRET")
 tenant_id = os.getenv("TENANT_ID")
 num_items = os.getenv("NUM_ITEMS", "full")
 
+columns_to_select = [
+    "Title", "Modified", "Created", "EmployeeName", "Date", "ProjectName", "SOWCode",
+    "Module", "Sprint", "TaskOrUserStory", "SubTask", "ActualTimeSpent", "Remarks",
+    "StartOfTheMonth", "EndOfTheMonth", "Year", "Manager", "SOWCodeSample"
+]
+select_query = ",".join(columns_to_select)
+
 def get_access_token():
     """Obtain an access token for Microsoft Graph API"""
     
@@ -68,7 +75,7 @@ def get_timesheet_data(site_id, list_id):
         "Content-Type": "application/json"
     }
     print("Site ID:", site_id)
-    endpoint = f"https://graph.microsoft.com/v1.0/sites/{site_id}/lists/{list_id}/items?expand=fields"
+    endpoint = f"https://graph.microsoft.com/v1.0/sites/{site_id}/lists/{list_id}/items?expand=fields($select={select_query})"
     if num_items != "full":
         endpoint += f"&$top={num_items}"
     else:
@@ -84,7 +91,6 @@ def get_timesheet_data(site_id, list_id):
         if response.status_code == 200:
             print("Response", response)
             data = response.json()
-            # print("Data", data)
             items.extend(data.get('value', []))
             if num_items != "full" and len(items) >= int(num_items):
                 items = items[:int(num_items)]
@@ -96,9 +102,13 @@ def get_timesheet_data(site_id, list_id):
             print(f"Error message: {response.text}")
             return None
     
-    df = pd.DataFrame(items)
+    # Extract the 'fields' dictionary from each item
+    fields_data = [item['fields'] for item in items]
+    
+    df = pd.DataFrame(fields_data)
     print("Data fetched successfully")
     print("Number of records:", len(df))
+    print("Columns in DataFrame:", df.columns.tolist())
     return df
 
 def get_timesheet_data_batch(site_id, list_id):
@@ -112,7 +122,7 @@ def get_timesheet_data_batch(site_id, list_id):
         "Content-Type": "application/json"
     }
     print("Site ID:", site_id)
-    endpoint = f"https://graph.microsoft.com/v1.0/sites/{site_id}/lists/{list_id}/items?expand=fields"
+    endpoint = f"https://graph.microsoft.com/v1.0/sites/{site_id}/lists/{list_id}/items?expand=fields($select={select_query})"
     if num_items != "full":
         endpoint += f"&$top={num_items}"
     else:
@@ -152,7 +162,11 @@ def get_timesheet_data_batch(site_id, list_id):
                 print(f"Error message: {response.text}")
                 return None
     
-    df = pd.DataFrame(items)
+    # Extract the 'fields' dictionary from each item
+    fields_data = [item['fields'] for item in items]
+    
+    df = pd.DataFrame(fields_data)
     print("Data fetched successfully using batch method")
     print("Number of records:", len(df))
+    print("Columns in DataFrame:", df.columns.tolist())
     return df
