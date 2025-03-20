@@ -25,7 +25,7 @@ report_writer = Agent(
     role='Report Writer',
     goal='Create clear and concise reports from data analysis',
     backstory="""You are a professional report writer who excels at presenting data insights
-    in a clear, structured, and actionable format. You focus on highlighting key findings
+    in a structured, actionable format. You focus on creating clear tables that highlight key findings
     and making recommendations.""",
     verbose=True,
     allow_delegation=False
@@ -64,7 +64,7 @@ filter_agent = Agent(
     backstory="""You are an expert in data filtering. 
     Your task is to understand the user's question and 
     return the appropriate Python filter code as a single string 
-    without any additional comments or explanations, In addition initialize the filter query in variable "filtered_data". 
+    without any additional comments or explanations. 
     For example, return: 
     filtered_data = df[df['ProjectName'].str.contains('McKinsey_LN Support_2', case=False, na=False)]""",
     verbose=True,
@@ -85,6 +85,7 @@ def chunk_text(text: str, max_length: int = 120000) -> list:
     return chunks
 
 def create_filter_task(df: pd.DataFrame, question: str) -> list:
+    """Create filter tasks based on the user question and DataFrame."""
     df_str = df.to_string()
     df_chunks = chunk_text(df_str)
     tasks = []
@@ -105,6 +106,7 @@ def create_filter_task(df: pd.DataFrame, question: str) -> list:
     return tasks
 
 def create_employee_analysis_task(df: pd.DataFrame, employee_id: str) -> list:
+    """Create tasks for analyzing employee-specific timesheet data."""
     df_str = df.to_string()
     df_chunks = chunk_text(df_str)
     tasks = []
@@ -120,7 +122,7 @@ def create_employee_analysis_task(df: pd.DataFrame, employee_id: str) -> list:
             4. Workload balance
             5. Peak activity periods
             6. Project involvement and contributions""",
-            expected_output="""A detailed employee analysis report containing:
+            expected_output="""A detailed employee analysis report as a DataFrame containing:
             - Total work hours
             - Project allocation breakdown
             - Work patterns and trends
@@ -132,6 +134,7 @@ def create_employee_analysis_task(df: pd.DataFrame, employee_id: str) -> list:
     return tasks
 
 def create_project_analysis_task(df: pd.DataFrame, project_name: str) -> list:
+    """Create tasks for analyzing project-specific timesheet data."""
     df_str = df.to_string()
     df_chunks = chunk_text(df_str)
     tasks = []
@@ -146,7 +149,7 @@ def create_project_analysis_task(df: pd.DataFrame, project_name: str) -> list:
             3. Daily/Weekly effort patterns
             4. Resource utilization trends
             5. Peak activity periods""",
-            expected_output="""A detailed project analysis report containing:
+            expected_output="""A detailed project analysis report as a DataFrame containing:
             - Project hours summary
             - Resource allocation breakdown
             - Temporal effort patterns
@@ -157,6 +160,7 @@ def create_project_analysis_task(df: pd.DataFrame, project_name: str) -> list:
     return tasks
 
 def create_general_analysis_task(df: pd.DataFrame) -> list:
+    """Create tasks for general timesheet data analysis."""
     df_str = df.to_string()
     df_chunks = chunk_text(df_str)
     tasks = []
@@ -170,7 +174,7 @@ def create_general_analysis_task(df: pd.DataFrame) -> list:
             2. Employee-wise workload distribution
             3. Daily trends in hours logged
             4. Project-wise time allocation""",
-            expected_output="""A detailed analysis report containing:
+            expected_output="""A detailed analysis report as a DataFrame containing:
             - Total hours calculation
             - Employee workload breakdown
             - Daily trend analysis
@@ -181,6 +185,7 @@ def create_general_analysis_task(df: pd.DataFrame) -> list:
     return tasks
 
 def create_report_task() -> Task:
+    """Create a task for generating the final report."""
     return Task(
         description="""Based on the analysis, your role is to create a comprehensive report that includes:
         
@@ -197,28 +202,29 @@ def create_report_task() -> Task:
         - Identified patterns and concerns, detailing their type, description, and impact
 
         Structure the report clearly to convey the essential information effectively.""",
-        expected_output="""Your task is to generate a report that encompasses:
+        expected_output="""Your task is to generate a report in DataFrame format that encompasses:
         - An executive summary highlighting key findings
         - Metrics on workload distribution across employees and projects
         - Prioritized recommendations for optimizing workload
         - Identified patterns and concerns based on the data
         
-        Make sure the output is comprehensive and well-organized, reflecting the analysis performed.""",
+        Ensure the output is well-organized, with data represented in tabular format.""",
         agent=report_writer
     )
 
 def filter_dataframe(df, filter_code):
-    # Debug: Initial DataFrame - Print only the ProjectName column
+    """Execute the filter code dynamically and return the filtered DataFrame."""
     print("Initial DataFrame (ProjectName column):\n", df['ProjectName'])
 
     # Prepare a local context for the exec call
-    local_context = {'df': df}  # Include df in local context
+    local_context = {'df': df}  
     filter_code_str = str(filter_code)
+
     # Execute the filter code dynamically
-    exec(filter_code_str, {}, local_context)  # Pass empty globals, local_context captures the variables
+    exec(filter_code_str, {}, local_context)  
     print("Executed filter code.")
 
-    # Retrieve filtered_data from local_context (it should be defined in filter_code)
+    # Retrieve filtered_data from local_context
     filtered_data = local_context.get('filtered_data', None)
 
     # Debugging: Print the filter result
@@ -227,10 +233,10 @@ def filter_dataframe(df, filter_code):
     else:
         print("No filtered data returned.")
 
-    # Return the filtered DataFrame, if any
     return filtered_data if filtered_data is not None else pd.DataFrame()
 
 def analyze_timesheet_data(df: pd.DataFrame, question: str):
+    """Main function to analyze timesheet data based on user questions."""
     # Clean column names
     df.columns = [col.replace('[', '').replace(']', '') for col in df.columns]
     
@@ -251,21 +257,10 @@ def analyze_timesheet_data(df: pd.DataFrame, question: str):
     
     # Debugging: Print filter result
     print("Filter result:", filter_result)
-    
-    
-    # Extract the filter query from the result
-    # if 'output' in filter_result:
-    #     filter_query = filter_result['output']
-    # else:
-    #     print("Key 'output' not found in CrewOutput.")
-    #     print("CrewOutput keys:", filter_result.keys())
-    #     print("CrewOutput content:", filter_result)
-    #     return None
+
+    # Filter DataFrame based on the result
     filtered_df = filter_dataframe(df, filter_result)
 
-# Print the filtered DataFrame outside
-    print("Filtered DataFrame:\n", filtered_df)
-       
     # Print the filtered DataFrame
     print("Filtered DataFrame:", filtered_df)
     
@@ -292,8 +287,8 @@ def analyze_timesheet_data(df: pd.DataFrame, question: str):
 
     # Initialize task list
     tasks = [decision_task]
-    
-    # Add specific analysis tasks based on parameters
+
+    # Determine specific analysis tasks based on the question
     if "project" in question.lower():
         project_name = question.split("project")[-1].strip()
         if 'ProjectName' in filtered_df.columns:
