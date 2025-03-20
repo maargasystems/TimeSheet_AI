@@ -50,9 +50,9 @@ async def timesheet_analyze(question: Question) -> Dict[str, Any]:
                 raise HTTPException(status_code=500, detail="Failed to get site ID")
             
             if question.use_batch:
-                df = get_timesheet_data_batch(site_id, list_id, question.num_items)
+                df = get_timesheet_data_batch(site_id, list_id)
             else:
-                df = get_timesheet_data(site_id, list_id, question.num_items)
+                df = get_timesheet_data(site_id, list_id)
             
             if df is None or df.empty:
                 raise HTTPException(status_code=500, detail="Failed to fetch timesheet data or data is empty")

@@ -1,9 +1,18 @@
 import requests
 import msal
 import pandas as pd
+from dotenv import load_dotenv
+import os
+
+# Load environment variables from .env file
+load_dotenv()
 
 hostname = "maargasystems007.sharepoint.com"
 site_path = "TimesheetSolution"
+client_id = os.getenv("CLIENT_ID")
+client_secret = os.getenv("CLIENT_SECRET")
+tenant_id = os.getenv("TENANT_ID")
+num_items = os.getenv("NUM_ITEMS", "full")
 
 def get_access_token():
     """Obtain an access token for Microsoft Graph API"""
@@ -48,7 +57,7 @@ def get_site_id(hostname, site_path):
         print(f"Error message: {site_response.text}")
         return None
 
-def get_timesheet_data(site_id, list_id, num_items="full"):
+def get_timesheet_data(site_id, list_id):
     token = get_access_token()
     
     if not token:
@@ -92,7 +101,7 @@ def get_timesheet_data(site_id, list_id, num_items="full"):
     print("Number of records:", len(df))
     return df
 
-def get_timesheet_data_batch(site_id, list_id, num_items="full"):
+def get_timesheet_data_batch(site_id, list_id):
     token = get_access_token()
     
     if not token:
