@@ -1,7 +1,7 @@
 // src/App.tsx
 
 import React from 'react';
-import ChatBot from './chatScreen/ChatBot';
+import ChatBot from './chatScreen/ChatBot_v1';
 import './App.css'; // Import the CSS file
 
 function App() {
