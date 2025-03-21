@@ -2,6 +2,7 @@ import pandas as pd
 from crewai import Agent, Task, Crew, Process
 from dotenv import load_dotenv
 import os
+from datetime import datetime
 
 # Load environment variables from .env file
 load_dotenv()
@@ -9,6 +10,13 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise ValueError("OPENAI_API_KEY environment variable is not set")
+
+# Helper function to format data as HTML tables
+def format_as_html_table(dataframe: pd.DataFrame, title: str) -> str:
+    """Convert a pandas DataFrame to an HTML table."""
+    html = f"<h3>{title}</h3>"
+    html += dataframe.to_html(index=False, border=0, classes='dataframe table table-bordered', justify='center')
+    return html
 
 # Create Crew AI Agents
 data_analyst = Agent(
@@ -25,7 +33,7 @@ report_writer = Agent(
     role='Report Writer',
     goal='Create clear and concise reports from data analysis',
     backstory="""You are a professional report writer who excels at presenting data insights
-    in a structured, actionable format. You focus on creating clear tables that highlight key findings
+    in a structured, actionable HTML format. You focus on creating clear tables that highlight key findings
     and making recommendations.""",
     verbose=True,
     allow_delegation=False
@@ -86,7 +94,7 @@ def chunk_text(text: str, max_length: int = 120000) -> list:
 
 def create_filter_task(df: pd.DataFrame, question: str) -> list:
     """Create filter tasks based on the user question and DataFrame."""
-    df_str = df.to_string()
+    df_str = df.head(5000).to_string()  # Only send top 5000 records to the agent
     df_chunks = chunk_text(df_str)
     tasks = []
     for chunk in df_chunks:
@@ -122,7 +130,7 @@ def create_employee_analysis_task(df: pd.DataFrame, employee_id: str) -> list:
             4. Workload balance
             5. Peak activity periods
             6. Project involvement and contributions""",
-            expected_output="""A detailed employee analysis report as a DataFrame containing:
+            expected_output="""A detailed employee analysis report with HTML output containing:
             - Total work hours
             - Project allocation breakdown
             - Work patterns and trends
@@ -149,7 +157,7 @@ def create_project_analysis_task(df: pd.DataFrame, project_name: str) -> list:
             3. Daily/Weekly effort patterns
             4. Resource utilization trends
             5. Peak activity periods""",
-            expected_output="""A detailed project analysis report as a DataFrame containing:
+            expected_output="""A detailed project analysis report with HTML output containing:
             - Project hours summary
             - Resource allocation breakdown
             - Temporal effort patterns
@@ -166,7 +174,7 @@ def create_general_analysis_task(df: pd.DataFrame) -> list:
     tasks = []
     for chunk in df_chunks:
         tasks.append(Task(
-            description=f"""Analyze the following timesheet data and identify key patterns:
+            description=f"""Analyze the following timesheet data to identify key patterns:
             {chunk}
             
             Focus on:
@@ -174,7 +182,7 @@ def create_general_analysis_task(df: pd.DataFrame) -> list:
             2. Employee-wise workload distribution
             3. Daily trends in hours logged
             4. Project-wise time allocation""",
-            expected_output="""A detailed analysis report as a DataFrame containing:
+            expected_output="""A detailed analysis report with HTML output containing:
             - Total hours calculation
             - Employee workload breakdown
             - Daily trend analysis
@@ -201,16 +209,26 @@ def create_report_task() -> Task:
         - Prioritized recommendations with titles, descriptions, and priority levels
         - Identified patterns and concerns, detailing their type, description, and impact
 
-        Structure the report clearly to convey the essential information effectively.""",
-        expected_output="""Your task is to generate a report in DataFrame format that encompasses:
+        Structure the report clearly with HTML formatting to convey the essential information effectively.""",
+        expected_output="""Your task is to generate a comprehensive report in HTML format that includes:
         - An executive summary highlighting key findings
         - Metrics on workload distribution across employees and projects
         - Prioritized recommendations for optimizing workload
         - Identified patterns and concerns based on the data
         
-        Ensure the output is well-organized, with data represented in tabular format.""",
+        Ensure the output is well-organized and suitable for display in a web browser.""",
         agent=report_writer
     )
+
+def log_filtered_data(question: str, filtered_data: pd.DataFrame):
+    """Log the filtered data along with the question and timestamp to a text file."""
+    log_file = "filtered_data_log.txt"
+    with open(log_file, "a") as f:
+        f.write(f"Question: {question}\n")
+        f.write(f"Time: {datetime.now()}\n")
+        f.write("Filtered Data:\n")
+        f.write(filtered_data.to_string())
+        f.write("\n\n")
 
 def filter_dataframe(df, filter_code):
     """Execute the filter code dynamically and return the filtered DataFrame."""
@@ -233,7 +251,10 @@ def filter_dataframe(df, filter_code):
     else:
         print("No filtered data returned.")
 
-    return filtered_data if filtered_data is not None else pd.DataFrame()
+    # Limit the filtered DataFrame to the top 5000 rows
+    filtered_data = filtered_data.head(5000) if filtered_data is not None else pd.DataFrame()
+
+    return filtered_data
 
 def analyze_timesheet_data(df: pd.DataFrame, question: str):
     """Main function to analyze timesheet data based on user questions."""
@@ -260,6 +281,9 @@ def analyze_timesheet_data(df: pd.DataFrame, question: str):
 
     # Filter DataFrame based on the result
     filtered_df = filter_dataframe(df, filter_result)
+
+    # Log the filtered data
+    log_filtered_data(question, filtered_df)
 
     # Print the filtered DataFrame
     print("Filtered DataFrame:", filtered_df)
