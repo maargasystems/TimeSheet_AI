@@ -17,7 +17,7 @@ num_items = os.getenv("NUM_ITEMS", "full")
 columns_to_select = [
     "Title", "Modified", "Created", "EmployeeName", "Date", "ProjectName", "SOWCode",
     "Module", "Sprint", "TaskOrUserStory", "SubTask", "ActualTimeSpent", "Remarks",
-    "StartOfTheMonth", "EndOfTheMonth", "Year", "Manager", "SOWCodeSample"
+    "Year", "Manager", "SOWCodeSample"
 ]
 select_query = ",".join(columns_to_select)
 
@@ -106,6 +106,14 @@ def get_timesheet_data(site_id, list_id):
     fields_data = [item['fields'] for item in items]
     
     df = pd.DataFrame(fields_data)
+    
+    # Remove specified columns
+    df.drop(columns=["@odata.etag", "StartOfTheMonth", "EndOfTheMonth", "Created"], inplace=True, errors='ignore')
+    
+    # Change date format for "Modified" and "Date" columns
+    df["Modified"] = pd.to_datetime(df["Modified"]).dt.strftime('%d/%m/%Y')
+    df["Date"] = pd.to_datetime(df["Date"]).dt.strftime('%d/%m/%Y')
+    
     print("Data fetched successfully")
     print("Number of records:", len(df))
     print("Columns in DataFrame:", df.columns.tolist())
@@ -166,6 +174,13 @@ def get_timesheet_data_batch(site_id, list_id):
     fields_data = [item['fields'] for item in items]
     
     df = pd.DataFrame(fields_data)
+    
+    # Remove specified columns
+    df.drop(columns=["@odata.etag", "StartOfTheMonth", "EndOfTheMonth", "Created"], inplace=True, errors='ignore')
+    
+    # Change date format for "Modified" and "Date" columns
+    df["Modified"] = pd.to_datetime(df["Modified"]).dt.strftime('%d/%m/%Y', errors='coerce')
+    df["Date"] = pd.to_datetime(df["Date"]).dt.strftime('%d/%m/%Y', errors='coerce')
     print("Data fetched successfully using batch method")
     print("Number of records:", len(df))
     print("Columns in DataFrame:", df.columns.tolist())

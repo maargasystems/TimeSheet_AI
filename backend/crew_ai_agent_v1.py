@@ -3,6 +3,7 @@ from crewai import Agent, Task, Crew, Process
 from dotenv import load_dotenv
 import os
 from datetime import datetime
+import json
 
 # Load environment variables from .env file
 load_dotenv()
@@ -79,6 +80,16 @@ filter_agent = Agent(
     allow_delegation=False
 )
 
+question_analyzer_agent = Agent(
+    role='Question Analyzer',
+    goal='Analyze the user question to determine if it pertains to a project or an employee and extract the relevant name.',
+    backstory="""You are an expert in natural language processing. 
+    Your task is to analyze the user's question and determine whether it pertains to a project or an employee. 
+    You will also extract the relevant project name or employee name from the question.""",
+    verbose=True,
+    allow_delegation=False
+)
+
 def chunk_text(text: str, max_length: int = 120000) -> list:
     """Chunk the text into smaller parts to avoid exceeding the maximum length."""
     chunks = []
@@ -107,7 +118,10 @@ def create_filter_task(df: pd.DataFrame, question: str) -> list:
             DataFrame chunk:
             {chunk}
             
-            The filter condition should be written in Python and returned as a query string.""",
+            The filter condition should be written in Python and returned as a query string.
+            
+            Ensure that the filter query is valid and executable. For example:
+            filtered_data = df[(df['ProjectName'] == 'KanTime AI Project') & (pd.to_datetime(df['Date']) >= pd.to_datetime('today') - pd.DateOffset(months=2))]""",
             expected_output="""A Python filter query string that can be applied to the DataFrame to retrieve the relevant data.""",
             agent=filter_agent
         ))
@@ -152,7 +166,7 @@ def create_project_analysis_task(df: pd.DataFrame, project_name: str) -> list:
             {chunk}
             
             Focus on:
-            1. Total hours spent on this project this month
+            1. Total hours spent on this project
             2. Employee contribution distribution
             3. Daily/Weekly effort patterns
             4. Resource utilization trends
@@ -162,7 +176,9 @@ def create_project_analysis_task(df: pd.DataFrame, project_name: str) -> list:
             - Resource allocation breakdown
             - Temporal effort patterns
             - Resource utilization metrics
-            - Key observations and recommendations""",
+            - Key observations and recommendations
+            - The Task the employee is worked on most
+            """,
             agent=project_analyst
         ))
     return tasks
@@ -220,11 +236,12 @@ def create_report_task() -> Task:
         agent=report_writer
     )
 
-def log_filtered_data(question: str, filtered_data: pd.DataFrame):
-    """Log the filtered data along with the question and timestamp to a text file."""
+def log_filtered_data(question: str, filter_query: str, filtered_data: pd.DataFrame):
+    """Log the filtered data along with the question, filter query, and timestamp to a text file."""
     log_file = "filtered_data_log.txt"
     with open(log_file, "a") as f:
         f.write(f"Question: {question}\n")
+        f.write(f"Filter Query: {filter_query}\n")
         f.write(f"Time: {datetime.now()}\n")
         f.write("Filtered Data:\n")
         f.write(filtered_data.to_string())
@@ -233,9 +250,13 @@ def log_filtered_data(question: str, filtered_data: pd.DataFrame):
 def filter_dataframe(df, filter_code):
     """Execute the filter code dynamically and return the filtered DataFrame."""
     print("Initial DataFrame (ProjectName column):\n", df['ProjectName'])
-
+#     filter_code="""filtered_data = df[
+#     (df['ProjectName'] == 'KanTime AI Project') & 
+#     (df['Date'] >= (pd.to_datetime('today') - pd.DateOffset(months=2)).strftime('%d/%m/%Y'))
+# ]"""
+    print("Filter code:\n", filter_code)
     # Prepare a local context for the exec call
-    local_context = {'df': df}  
+    local_context = {'df': df, 'pd': pd}  # Include pandas in the local context
     filter_code_str = str(filter_code)
 
     # Execute the filter code dynamically
@@ -254,97 +275,113 @@ def filter_dataframe(df, filter_code):
     # Limit the filtered DataFrame to the top 5000 rows
     filtered_data = filtered_data.head(5000) if filtered_data is not None else pd.DataFrame()
 
-    return filtered_data
+    return filtered_data, filter_code_str
 
 def analyze_timesheet_data(df: pd.DataFrame, question: str):
     """Main function to analyze timesheet data based on user questions."""
-    # Clean column names
+    try:
+        # Clean and sort DataFrame
+        df = clean_and_sort_dataframe(df)
+        
+        # Analyze the question to determine the analysis type and extracted name
+        analysis_type, extracted_name = analyze_question(question)
+        
+        # Filter the DataFrame based on the question
+        filtered_df, filter_query_python = filter_data(df, question)
+        
+        # Log the filtered data
+        log_filtered_data(question, filter_query_python, filtered_df)
+        
+        # Create analysis tasks based on the analysis type
+        tasks = create_analysis_tasks(analysis_type, extracted_name, filtered_df)
+        
+        # Add report task as the final task
+        tasks.append(create_report_task())
+        
+        # Run the crew with all agents and tasks
+        result = run_crew(tasks)
+        
+        return result
+    except Exception as e:
+        print(f"Error during analysis: {e}")
+        return None
+
+def clean_and_sort_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Clean and sort the DataFrame."""
     df.columns = [col.replace('[', '').replace(']', '') for col in df.columns]
-    
-    # Print column names for debugging
-    print("DataFrame columns:", df.columns)
-    
-    # Create filter tasks
-    filter_tasks = create_filter_task(df, question)
-    
-    # Run the filter tasks to get the filter query
-    crew = Crew(
-        agents=[filter_agent],
-        tasks=filter_tasks,
-        verbose=True,
-        process=Process.sequential
-    )
-    filter_result = crew.kickoff()
-    
-    # Debugging: Print filter result
-    print("Filter result:", filter_result)
+    df = df.sort_values(by='Modified', ascending=False)
+    return df
 
-    # Filter DataFrame based on the result
-    filtered_df = filter_dataframe(df, filter_result)
-
-    # Log the filtered data
-    log_filtered_data(question, filtered_df)
-
-    # Print the filtered DataFrame
-    print("Filtered DataFrame:", filtered_df)
-    
-    # Create decision task
-    decision_task = Task(
-        description=f"""Analyze the following request and determine the appropriate analysis type:
+def analyze_question(question: str) -> tuple:
+    """Analyze the question to determine the analysis type and extracted name."""
+    question_analyzer_task = Task(
+        description=f"""Analyze the following question to determine if it pertains to a Project Analysis or an Employee Analysis and extract the relevant name:
         Question: {question}
         
         Available Analysis Types:
         1. Project Analysis
         2. Employee Analysis
-        3. General Analysis
         
-        Data Summary:
-        {filtered_df.describe().to_string()}
-        
-        Determine the most appropriate analysis type and provide reasoning.""",
-        expected_output="""A decision object containing:
-        - Selected analysis type
-        - Reasoning for selection
-        - Recommended focus areas""",
-        agent=decision_agent
+        Provide the analysis type and the extracted name.""",
+        expected_output="""A decision object containing given in string format:
+        - Selected analysis type (Project Analysis or Employee Analysis)
+        - Extracted name (project name or employee name)""",
+        agent=question_analyzer_agent
     )
+    questionAnalyserCrew = Crew(
+        agents=[question_analyzer_agent],
+        tasks=[question_analyzer_task],
+        verbose=True,
+        process=Process.sequential
+    )
+    result = questionAnalyserCrew.kickoff()
+    task_output = question_analyzer_task.output
+    task_output_raw = json.loads(task_output.raw)
+    analysis_type = task_output_raw.get('Selected analysis type', None)
+    extracted_name = task_output_raw.get('Extracted name', None)
+    return analysis_type, extracted_name
 
-    # Initialize task list
-    tasks = [decision_task]
+def filter_data(df: pd.DataFrame, question: str) -> pd.DataFrame:
+    """Filter the DataFrame based on the question."""
+    filter_tasks = create_filter_task(df, question)
+    fcrew = Crew(
+        agents=[filter_agent],
+        tasks=filter_tasks,
+        verbose=True,
+        process=Process.sequential
+    )
+    filter_result = fcrew.kickoff()
+    filter_query = filter_result
+    print("Filter query:", filter_query)
+    filtered_df, _ = filter_dataframe(df, filter_query)
+    return filtered_df, filter_query
 
-    # Determine specific analysis tasks based on the question
-    if "project" in question.lower():
-        project_name = question.split("project")[-1].strip()
-        if 'ProjectName' in filtered_df.columns:
-            project_df = filtered_df[filtered_df['ProjectName'] == project_name].copy()
-            if not project_df.empty:
-                tasks.extend(create_project_analysis_task(project_df, project_name))
+def create_analysis_tasks(analysis_type: str, extracted_name: str, filtered_df: pd.DataFrame) -> list:
+    """Create analysis tasks based on the analysis type."""
+    tasks = []
+    if analysis_type == "Project Analysis" and 'ProjectName' in filtered_df.columns:
+        project_df = filtered_df[filtered_df['ProjectName'].str.contains(extracted_name, case=False, na=False)].copy()
+        if not project_df.empty:
+            tasks.extend(create_project_analysis_task(project_df, extracted_name))
         else:
-            print("Error: 'ProjectName' column not found in DataFrame")
-    
-    if "employee" in question.lower():
-        employee_id = question.split("employee")[-1].strip()
-        if 'EmployeeNameStringId' in filtered_df.columns:
-            employee_df = filtered_df[filtered_df['EmployeeNameStringId'] == employee_id].copy()
-            if not employee_df.empty:
-                tasks.extend(create_employee_analysis_task(employee_df, employee_id))
+            print(f"No project data found for: {extracted_name}")
+    elif analysis_type == "Employee Analysis" and 'EmployeeName' in filtered_df.columns:
+        employee_df = filtered_df[filtered_df['EmployeeName'].str.contains(extracted_name, case=False, na=False)].copy()
+        if not employee_df.empty:
+            tasks.extend(create_employee_analysis_task(employee_df, extracted_name))
         else:
-            print("Error: 'EmployeeNameStringId' column not found in DataFrame")
-    
-    # Add general analysis task if no specific analysis is requested
-    if "project" not in question.lower() and "employee" not in question.lower():
+            print(f"No employee data found for: {extracted_name}")
+    else:
         tasks.extend(create_general_analysis_task(filtered_df))
-    
-    # Always add report task as the final task
-    tasks.append(create_report_task())
+    return tasks
 
-    # Create and run the crew with all agents
+def run_crew(tasks: list) -> dict:
+    """Run the crew with all agents and tasks."""
     crew = Crew(
         agents=[decision_agent, data_analyst, project_analyst, employee_analyst, report_writer],
         tasks=tasks,
         verbose=True,
         process=Process.sequential
     )
-
     result = crew.kickoff()
     return result
