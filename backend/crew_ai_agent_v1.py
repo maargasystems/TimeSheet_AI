@@ -25,7 +25,7 @@ data_analyst = Agent(
     goal='Analyze timesheet data and provide comprehensive insights',
     backstory="""You are an expert data analyst specializing in timesheet analysis.
     Your goal is to provide valuable insights about employee workload, project distribution,
-    and time management patterns.""",
+    and time management patterns. Ensure all calculations are accurate and precise, matching the actual database values.""",
     verbose=True,
     allow_delegation=False
 )
@@ -35,25 +35,28 @@ report_writer = Agent(
     goal='Create clear and concise reports from data analysis',
     backstory="""You are a professional report writer who excels at presenting data insights
     in a structured, actionable HTML format. You focus on creating clear tables that highlight key findings
-    and making recommendations.""",
+    and making recommendations. Ensure that all reported values are accurate and match the actual database.""",
     verbose=True,
     allow_delegation=False
 )
 
 project_analyst = Agent(
     role='Project Analyst',
-    goal='Analyze specific project timesheet data and provide detailed project insights',
-    backstory="""You are a specialized project analyst who excels at analyzing project-specific timesheet data.
-    Your expertise lies in identifying project patterns, resource utilization, and providing actionable project insights.""",
+    goal='Analyze specific project timesheet data and provide detailed insights, ensuring all calculations of hours worked are accurate and precise, while recognizing that outputs may vary based on nuanced interpretations of the data.',
+    backstory="""You are a specialized project analyst with a strong emphasis on analyzing project-specific timesheet data. 
+    Your expertise lies in identifying project patterns, resource utilization, and delivering actionable insights. 
+    It is crucial that all calculations, particularly concerning hours worked, are performed accurately using Decimal for floating-point operations. 
+    Ensure that all reported values match the actual database values. Deliver precise and reliable reports that include various interpretations and conclusions from the data to better inform project management decisions.""",
     verbose=True,
     allow_delegation=False
+    
 )
 
 employee_analyst = Agent(
     role='Employee Analyst',
     goal='Analyze employee-specific timesheet data and provide detailed workload insights',
     backstory="""You are a specialized employee workload analyst who excels at analyzing individual employee performance and workload.
-    Your expertise lies in identifying work patterns, time allocation, and providing insights about employee utilization.""",
+    Your expertise lies in identifying work patterns, time allocation, and providing insights about employee utilization. Ensure all calculations are accurate and match the actual database values.""",
     verbose=True,
     allow_delegation=False
 )
@@ -67,25 +70,12 @@ decision_agent = Agent(
     allow_delegation=True
 )
 
-filter_agent = Agent(
-    role='Filter Agent',
-    goal='Write and execute the filter condition to filter the data from the DataFrame based on the user question',
-    backstory="""You are an expert in data filtering. 
-    Your task is to understand the user's question and 
-    return the appropriate Python filter code as a single string 
-    without any additional comments or explanations. 
-    For example, return: 
-    filtered_data = df[df['ProjectName'].str.contains('McKinsey_LN Support_2', case=False, na=False)]""",
-    verbose=True,
-    allow_delegation=False
-)
-
 question_analyzer_agent = Agent(
     role='Question Analyzer',
-    goal='Analyze the user question to determine if it pertains to a project or an employee and extract the relevant name.',
+    goal='Analyze the user question to determine if it pertains to a project, an employee, or a specific time-related aspect, and extract the relevant details.',
     backstory="""You are an expert in natural language processing. 
-    Your task is to analyze the user's question and determine whether it pertains to a project or an employee. 
-    You will also extract the relevant project name or employee name from the question.""",
+    Your task is to analyze the user's question and determine whether it pertains to a specific project, employee, or a time-related aspect (Year, Month, Day, or Date). 
+    You will also extract the relevant project name or employee name from the question, as well as any time-related information if applicable.""",
     verbose=True,
     allow_delegation=False
 )
@@ -103,83 +93,82 @@ def chunk_text(text: str, max_length: int = 120000) -> list:
     chunks.append(text)
     return chunks
 
-def create_filter_task(df: pd.DataFrame, question: str) -> list:
-    """Create filter tasks based on the user question and DataFrame."""
-    df_str = df.head(5000).to_string()  # Only send top 5000 records to the agent
+def create_project_analysis_task(df: pd.DataFrame, project_name: str) -> list:
+    """Create tasks for analyzing project-specific timesheet data."""
+    
+    df_str = df.to_string()
     df_chunks = chunk_text(df_str)
     tasks = []
-    for chunk in df_chunks:
-        tasks.append(Task(
-            description=f"""Write and execute the filter condition to filter the data from the DataFrame based on the user question:
-            Question: {question}
-            
-            DataFrame columns: {df.columns.tolist()}
-            
-            DataFrame chunk:
-            {chunk}
-            
-            The filter condition should be written in Python and returned as a query string.
-            
-            Ensure that the filter query is valid and executable. For example:
-            filtered_data = df[(df['ProjectName'] == 'KanTime AI Project') & (pd.to_datetime(df['Date']) >= pd.to_datetime('today') - pd.DateOffset(months=2))]""",
-            expected_output="""A Python filter query string that can be applied to the DataFrame to retrieve the relevant data.""",
-            agent=filter_agent
-        ))
+
+    # for chunk in df_chunks:
+    tasks.append(Task(
+        description=f"""
+            I have a timesheet dataset with {len(df)} entries.
+            For each row, I have:
+            - ProjectName
+            - EmployeeName
+            - Date
+            - ActualTimeSpent
+ 
+            Please:
+            1. Calculate total hours for each employee by month
+            2. Break down the totals by project
+            3. Verify all entries are included
+            4. Format results clearly
+ 
+            Raw data:
+            {df.to_string()}
+            """,
+        agent=project_analyst
+    ))
+    log_file = "filtered_data_log.txt"    
+    with open(log_file, "a") as f:
+            f.write(f"\n\n**Project Analysis Agent**\n")
+            f.write(f"Project Name: {project_name}\n")
+            f.write(f"Tasks: {tasks}\n")
     return tasks
 
 def create_employee_analysis_task(df: pd.DataFrame, employee_id: str) -> list:
     """Create tasks for analyzing employee-specific timesheet data."""
+    
     df_str = df.to_string()
     df_chunks = chunk_text(df_str)
     tasks = []
+
     for chunk in df_chunks:
         tasks.append(Task(
             description=f"""Analyze the timesheet data for employee '{employee_id}':
-            {chunk}
             
-            Focus on:
-            1. Total hours worked this month
-            2. Project distribution
-            3. Daily/Weekly work patterns
-            4. Workload balance
-            5. Peak activity periods
-            6. Project involvement and contributions""",
-            expected_output="""A detailed employee analysis report with HTML output containing:
-            - Total work hours
-            - Project allocation breakdown
-            - Work patterns and trends
-            - Workload distribution
-            - Key observations and recommendations
-            - Potential areas for optimization""",
-            agent=employee_analyst
-        ))
-    return tasks
+            **Data:** {chunk}
+            
+            **Important Notes:** 
+                - All calculations must be precise. Ensure that the 'Actualtimespent' column correctly includes floating-point values, as in the following example: 2.0 + 2.5 + 1.5 should equal 6.
+                - When grouping employee data by hours, accuracy is crucial. Confirm that hours are summed correctly across different timeframes and tasks to avoid misrepresentation of total work hours.
 
-def create_project_analysis_task(df: pd.DataFrame, project_name: str) -> list:
-    """Create tasks for analyzing project-specific timesheet data."""
-    df_str = df.to_string()
-    df_chunks = chunk_text(df_str)
-    tasks = []
-    for chunk in df_chunks:
-        tasks.append(Task(
-            description=f"""Analyze the timesheet data for project '{project_name}':
-            {chunk}
-            
-            Focus on:
-            1. Total hours spent on this project
-            2. Employee contribution distribution
-            3. Daily/Weekly effort patterns
-            4. Resource utilization trends
-            5. Peak activity periods""",
-            expected_output="""A detailed project analysis report with HTML output containing:
-            - Project hours summary
-            - Resource allocation breakdown
-            - Temporal effort patterns
-            - Resource utilization metrics
-            - Key observations and recommendations
-            - The Task the employee is worked on most
+            **Focus Areas:**
+            1. Calculate the total hours worked overall by the employee with detail to precision.
+            2. Provide a year-wise breakdown of total hours worked, ensuring correct calculations.
+            3. Include a month-wise breakdown of total hours worked, verifying each entry is aggregated correctly.
+            4. Analyze total hours worked on a project-wise basis, accounting for all related tasks.
+            5. Identify both major and minor tasks the employee has worked on, ensuring clarity on each.
+            6. Explore daily and weekly work patterns to identify potential anomalies.
+            7. Assess workload balance across projects to ensure fair distribution of hours.
+            8. Identify peak activity periods based on timesheet data with accurate grouping.
+            9. Evaluate resource utilization trends throughout the work period and highlight any discrepancies.
+            10. Examine the employee's contributions and involvement in various projects, ensuring all entries are accounted for appropriately.
             """,
-            agent=project_analyst
+            expected_output="""A comprehensive employee analysis report with HTML output containing:
+            - Total hours worked in aggregate, with accurate calculations.
+            - Yearly and monthly breakdown of hours worked, ensuring no discrepancies.
+            - Time allocations specific to each project, verifying total contributions.
+            - Insights on major and minor tasks performed, categorized correctly.
+            - Detailed analysis of work patterns and trends.
+            - Distribution and balance of workload across tasks, with accuracy in grouping.
+            - Key observations and actionable recommendations.
+            - Identified areas for potential optimization.
+            - Clear overview of the employee's contributions to different projects and tasks, highlighting any inaccuracies.
+            """,
+            agent=employee_analyst
         ))
     return tasks
 
@@ -236,67 +225,23 @@ def create_report_task() -> Task:
         agent=report_writer
     )
 
-def log_filtered_data(question: str, filter_query: str, filtered_data: pd.DataFrame):
-    """Log the filtered data along with the question, filter query, and timestamp to a text file."""
-    log_file = "filtered_data_log.txt"
-    with open(log_file, "a") as f:
-        f.write(f"Question: {question}\n")
-        f.write(f"Filter Query: {filter_query}\n")
-        f.write(f"Time: {datetime.now()}\n")
-        f.write("Filtered Data:\n")
-        f.write(filtered_data.to_string())
-        f.write("\n\n")
-
-def filter_dataframe(df, filter_code):
-    """Execute the filter code dynamically and return the filtered DataFrame."""
-    print("Initial DataFrame (ProjectName column):\n", df['ProjectName'])
-#     filter_code="""filtered_data = df[
-#     (df['ProjectName'] == 'KanTime AI Project') & 
-#     (df['Date'] >= (pd.to_datetime('today') - pd.DateOffset(months=2)).strftime('%d/%m/%Y'))
-# ]"""
-    print("Filter code:\n", filter_code)
-    # Prepare a local context for the exec call
-    local_context = {'df': df, 'pd': pd}  # Include pandas in the local context
-    filter_code_str = str(filter_code)
-
-    # Execute the filter code dynamically
-    exec(filter_code_str, {}, local_context)  
-    print("Executed filter code.")
-
-    # Retrieve filtered_data from local_context
-    filtered_data = local_context.get('filtered_data', None)
-
-    # Debugging: Print the filter result
-    if filtered_data is not None:
-        print("Filter result:\n", filtered_data)
-    else:
-        print("No filtered data returned.")
-
-    # Limit the filtered DataFrame to the top 5000 rows
-    filtered_data = filtered_data.head(5000) if filtered_data is not None else pd.DataFrame()
-
-    return filtered_data, filter_code_str
-
 def analyze_timesheet_data(df: pd.DataFrame, question: str):
     """Main function to analyze timesheet data based on user questions."""
     try:
-        # Clean and sort DataFrame
-        df = clean_and_sort_dataframe(df)
-        
         # Analyze the question to determine the analysis type and extracted name
-        analysis_type, extracted_name = analyze_question(question)
+        analysis_type, extracted_name, time_info = analyze_question(question)
+        log_file = "filtered_data_log.txt"
+        with open(log_file, "a") as f:
+            f.write(f"\n\n**Analysis Agent**\n")
+            f.write(f"Analysis Type: {analysis_type}\n")
+            f.write(f"Extracted Name: {extracted_name}\n")
+            f.write(f"Time-related Information: {time_info}\n")
         
-        # Filter the DataFrame based on the question
-        filtered_df, filter_query_python = filter_data(df, question)
-        
-        # Log the filtered data
-        log_filtered_data(question, filter_query_python, filtered_df)
-        
+        # Check if the filtered DataFrame is empty
+        if df.empty:
+            return "Sorry for the inconvenience, try a different question."       
         # Create analysis tasks based on the analysis type
-        tasks = create_analysis_tasks(analysis_type, extracted_name, filtered_df)
-        
-        # Add report task as the final task
-        tasks.append(create_report_task())
+        tasks = create_analysis_tasks(analysis_type, extracted_name, df, time_info)
         
         # Run the crew with all agents and tasks
         result = run_crew(tasks)
@@ -306,65 +251,72 @@ def analyze_timesheet_data(df: pd.DataFrame, question: str):
         print(f"Error during analysis: {e}")
         return None
 
-def clean_and_sort_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """Clean and sort the DataFrame."""
-    df.columns = [col.replace('[', '').replace(']', '') for col in df.columns]
-    df = df.sort_values(by='Modified', ascending=False)
-    return df
-
 def analyze_question(question: str) -> tuple:
     """Analyze the question to determine the analysis type and extracted name."""
+    
     question_analyzer_task = Task(
-        description=f"""Analyze the following question to determine if it pertains to a Project Analysis or an Employee Analysis and extract the relevant name:
+        description=f"""Analyze the following question to determine if it pertains to Project Analysis, Employee Analysis, or Time Analysis, and extract the relevant details:
         Question: {question}
         
         Available Analysis Types:
-        1. Project Analysis
-        2. Employee Analysis
+        1. Project Analysis - Choose this if the question is related to a specific project.
+        2. Employee Analysis - Choose this if the question is related to a specific employee.
+        3. Time Analysis - Choose this if the question is related to a specific time period, date, day, month, year or a phrase that related to Calender.
         
-        Provide the analysis type and the extracted name.""",
-        expected_output="""A decision object containing given in string format:
-        - Selected analysis type (Project Analysis or Employee Analysis)
-        - Extracted name (project name or employee name)""",
+        Please provide:
+        - The analysis type selected (Project Analysis, Employee Analysis, or Time Analysis).
+        - The extracted name (project name or employee name, if applicable).
+        - Any specific time-related information (Year, Month, Day, or Date) if mentioned in the question. Return "Year" if the question pertains to a Year, "Month" for Months, "Day" for Days, or "Date" if it is about a specific Date.""",
+        expected_output="""A decision object containing the following information in JSON format:
+        - Selected analysis type (Project Analysis, Employee Analysis, or Time Analysis)
+        - Extracted name (project name or employee name, if applicable)
+        - Time-related information (Year, Month, Day, or Date, if specified)""",
         agent=question_analyzer_agent
     )
+    
     questionAnalyserCrew = Crew(
         agents=[question_analyzer_agent],
         tasks=[question_analyzer_task],
         verbose=True,
         process=Process.sequential
     )
-    result = questionAnalyserCrew.kickoff()
+    
+    questionAnalyserCrew.kickoff()
     task_output = question_analyzer_task.output
-    task_output_raw = json.loads(task_output.raw)
+
+    # Handle empty or invalid output
+    if not task_output or not hasattr(task_output, 'raw'):
+        print("Error: Task output is empty or not structured correctly.")
+        return None, None, None
+
+    try:
+        task_output_raw = json.loads(task_output.raw)
+    except json.JSONDecodeError as e:
+        print(f"JSON decoding failed: {e}. Raw output: {task_output.raw}")
+        return None, None, None
+
+    # Extract results
     analysis_type = task_output_raw.get('Selected analysis type', None)
     extracted_name = task_output_raw.get('Extracted name', None)
-    return analysis_type, extracted_name
+    time_info = task_output_raw.get('Time-related information', None)  # This is to capture any time-related info
 
-def filter_data(df: pd.DataFrame, question: str) -> pd.DataFrame:
-    """Filter the DataFrame based on the question."""
-    filter_tasks = create_filter_task(df, question)
-    fcrew = Crew(
-        agents=[filter_agent],
-        tasks=filter_tasks,
-        verbose=True,
-        process=Process.sequential
-    )
-    filter_result = fcrew.kickoff()
-    filter_query = filter_result
-    print("Filter query:", filter_query)
-    filtered_df, _ = filter_dataframe(df, filter_query)
-    return filtered_df, filter_query
+    print("Analysis Type:", analysis_type)
+    print("Extracted Name:", extracted_name)
+    print("Time-related Information:", time_info)  # For debugging
 
-def create_analysis_tasks(analysis_type: str, extracted_name: str, filtered_df: pd.DataFrame) -> list:
+    return analysis_type, extracted_name, time_info  # Return time info as well
+
+def create_analysis_tasks(analysis_type: str, extracted_name: str, filtered_df: pd.DataFrame,time_info:any) -> list:
     """Create analysis tasks based on the analysis type."""
     tasks = []
+    
     if analysis_type == "Project Analysis" and 'ProjectName' in filtered_df.columns:
         project_df = filtered_df[filtered_df['ProjectName'].str.contains(extracted_name, case=False, na=False)].copy()
         if not project_df.empty:
             tasks.extend(create_project_analysis_task(project_df, extracted_name))
         else:
             print(f"No project data found for: {extracted_name}")
+
     elif analysis_type == "Employee Analysis" and 'EmployeeName' in filtered_df.columns:
         employee_df = filtered_df[filtered_df['EmployeeName'].str.contains(extracted_name, case=False, na=False)].copy()
         if not employee_df.empty:
@@ -373,6 +325,7 @@ def create_analysis_tasks(analysis_type: str, extracted_name: str, filtered_df: 
             print(f"No employee data found for: {extracted_name}")
     else:
         tasks.extend(create_general_analysis_task(filtered_df))
+    
     return tasks
 
 def run_crew(tasks: list) -> dict:

@@ -57,7 +57,6 @@ const ChatBot: React.FC = () => {
 
         // Return the formatted HTML
         return `
-            <h2>Comprehensive Workload Analysis Report</h2>
             <div>${reportSections}</div>
         `;
     };
